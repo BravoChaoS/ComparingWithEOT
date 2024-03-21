@@ -15,7 +15,9 @@ from torch.nn.modules.activation import MultiheadAttention
 from torch.nn.modules.container import ModuleList
 from torch.nn.init import xavier_uniform_
 from torch.nn.modules.dropout import Dropout
-from torch.nn.modules.linear import Linear, _LinearWithBias
+#from torch.nn.modules.linear import Linear, _LinearWithBias
+#from torch.nn.modules.linear import NonDynamicallyQuantizableLinear as _LinearWithBias
+from torch.nn.modules.linear import Linear, NonDynamicallyQuantizableLinear as _LinearWithBias
 from torch.nn.modules.normalization import LayerNorm
 from torch.nn.init import xavier_uniform_
 from torch.nn.init import constant_
@@ -541,14 +543,14 @@ class AgentFormerEncoderLayer(Module):
     def __init__(self, cfg, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu"):
         super().__init__()
         self.cfg = cfg
-        self.self_attn = AgentAwareAttention(cfg, d_model, nhead, dropout=dropout)
+        self.self_attn = AgentAwareAttention(cfg, d_model + 8, nhead, dropout=dropout)
         # Implementation of Feedforward model
-        self.linear1 = Linear(d_model, dim_feedforward)
+        self.linear1 = Linear(d_model + 8, dim_feedforward)
         self.dropout = Dropout(dropout)
-        self.linear2 = Linear(dim_feedforward, d_model)
+        self.linear2 = Linear(dim_feedforward, d_model + 8)
 
-        self.norm1 = LayerNorm(d_model)
-        self.norm2 = LayerNorm(d_model)
+        self.norm1 = LayerNorm(d_model + 8)
+        self.norm2 = LayerNorm(d_model + 8)
         self.dropout1 = Dropout(dropout)
         self.dropout2 = Dropout(dropout)
 
@@ -605,16 +607,16 @@ class AgentFormerDecoderLayer(Module):
     def __init__(self, cfg, d_model, nhead, dim_feedforward=2048, dropout=0.1, activation="relu"):
         super().__init__()
         self.cfg = cfg
-        self.self_attn = AgentAwareAttention(cfg, d_model, nhead, dropout=dropout)
-        self.multihead_attn = AgentAwareAttention(cfg, d_model, nhead, dropout=dropout)
+        self.self_attn = AgentAwareAttention(cfg, d_model + 8, nhead, dropout=dropout) # added
+        self.multihead_attn = AgentAwareAttention(cfg, d_model + 8, nhead, dropout=dropout) # added
         # Implementation of Feedforward model
-        self.linear1 = Linear(d_model, dim_feedforward)
+        self.linear1 = Linear(d_model + 8, dim_feedforward) # added
         self.dropout = Dropout(dropout)
-        self.linear2 = Linear(dim_feedforward, d_model)
+        self.linear2 = Linear(dim_feedforward, d_model + 8) # added
 
-        self.norm1 = LayerNorm(d_model)
-        self.norm2 = LayerNorm(d_model)
-        self.norm3 = LayerNorm(d_model)
+        self.norm1 = LayerNorm(d_model + 8) # added
+        self.norm2 = LayerNorm(d_model + 8) # added
+        self.norm3 = LayerNorm(d_model + 8) # added
         self.dropout1 = Dropout(dropout)
         self.dropout2 = Dropout(dropout)
         self.dropout3 = Dropout(dropout)

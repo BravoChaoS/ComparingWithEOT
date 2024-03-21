@@ -15,7 +15,7 @@ from utils.utils import prepare_seed, print_log, mkdir_if_missing
 
 def get_model_prediction(data, sample_k):
     model.set_data(data)
-    recon_motion_3D, _ = model.inference(mode='recon', sample_num=sample_k)
+    recon_motion_3D, _ = model.inference(mode='recon', sample_num=sample_k)  # most likely output, num_sample = 1 (overrided in inference func)
     sample_motion_3D, data = model.inference(mode='infer', sample_num=sample_k, need_weights=False)
     sample_motion_3D = sample_motion_3D.transpose(0, 1).contiguous()
     return recon_motion_3D, sample_motion_3D
@@ -91,7 +91,7 @@ def test_model(generator, save_dir, cfg):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', default=None)
+    parser.add_argument('--cfg', default='eot_agentformer')
     parser.add_argument('--data_eval', default='test')
     parser.add_argument('--epochs', default=None)
     parser.add_argument('--gpu', type=int, default=0)
@@ -116,13 +116,13 @@ if __name__ == '__main__':
         prepare_seed(cfg.seed)
         """ model """
         if not args.cached:
-            model_id = cfg.get('model_id', 'agentformer')
+            model_id = cfg.get('model_id', 'gnnv1')
             model = model_dict[model_id](cfg)
             model.set_device(device)
             model.eval()
             if epoch > 0:
                 cp_path = cfg.model_path % epoch
-                print_log(f'loading model from checkpoint: {cp_path}', log, display=True)
+                print_log(f'loading model model from checkpoint: {cp_path}', log, display=True)
                 model_cp = torch.load(cp_path, map_location='cpu')
                 model.load_state_dict(model_cp['model_dict'], strict=False)
 
@@ -132,7 +132,8 @@ if __name__ == '__main__':
         for split in data_splits:  
             generator = data_generator(cfg, log, split=split, phase='testing')
             save_dir = f'{cfg.result_dir}/epoch_{epoch:04d}/{split}'; mkdir_if_missing(save_dir)
-            eval_dir = f'{save_dir}/samples'
+            eval_dir = f'{save_dir}/samples' # best of 20 samples
+            #eval_dir = f'{save_dir}/recon'  # most likely deterministic
             if not args.cached:
                 test_model(generator, save_dir, cfg)
 

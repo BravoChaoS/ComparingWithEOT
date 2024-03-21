@@ -30,10 +30,11 @@ def logging(cfg, epoch, total_epoch, iter, total_iter, ep, seq, frame, losses_st
 def train(epoch):
     global tb_ind
     since_train = time.time()
-    generator.shuffle()
+    #generator.shuffle()  # turn off shuffling data
     train_loss_meter = {x: AverageMeter() for x in cfg.loss_cfg.keys()}
     train_loss_meter['total_loss'] = AverageMeter()
     last_generator_index = 0
+    print("epoch No :",epoch)
     while not generator.is_epoch_end():
         data = generator()
         if data is not None:
@@ -50,7 +51,7 @@ def train(epoch):
             for key in loss_unweighted_dict.keys():
                 train_loss_meter[key].update(loss_unweighted_dict[key])
 
-        if generator.index - last_generator_index > cfg.print_freq:
+        if generator.index - last_generator_index > cfg.print_freq and data: # added
             ep = time.time() - since_train
             losses_str = ' '.join([f'{x}: {y.avg:.3f} ({y.val:.3f})' for x, y in train_loss_meter.items()])
             logging(args.cfg, epoch, cfg.num_epochs, generator.index, generator.num_total_samples, ep, seq, frame, losses_str, log)
@@ -65,7 +66,7 @@ def train(epoch):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg', default=None)
+    parser.add_argument('--cfg', default='eot_agentformer')
     parser.add_argument('--start_epoch', type=int, default=0)
     parser.add_argument('--tmp', action='store_true', default=False)
     parser.add_argument('--gpu', type=int, default=0)
@@ -91,7 +92,7 @@ if __name__ == '__main__':
     generator = data_generator(cfg, log, split='train', phase='training')
 
     """ model """
-    model_id = cfg.get('model_id', 'agentformer')
+    model_id = cfg.get('model_id', 'gnnv1')
     model = model_dict[model_id](cfg)
     optimizer = optim.Adam(model.parameters(), lr=cfg.lr)
     scheduler_type = cfg.get('lr_scheduler', 'linear')

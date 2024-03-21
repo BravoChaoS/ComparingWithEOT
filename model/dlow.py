@@ -78,7 +78,7 @@ class DLow(nn.Module):
 
         # Dlow's Q net
         self.qnet_mlp = cfg.get('qnet_mlp', [512, 256])
-        self.q_mlp = MLP(self.pred_model_dim, self.qnet_mlp)
+        self.q_mlp = MLP(self.pred_model_dim + 8, self.qnet_mlp) # added dims
         self.q_A = nn.Linear(self.q_mlp.out_dim, nk * nz)
         self.q_b = nn.Linear(self.q_mlp.out_dim, nk * nz)
         
@@ -122,6 +122,7 @@ class DLow(nn.Module):
     def inference(self, mode, sample_num, need_weights=False):
         self.main(mean=True, need_weights=need_weights)
         res = self.data[f'infer_dec_motion']
+        #res = res[:,0:10]  # to sample at k=5 take first 5 of 20 samples
         if mode == 'recon':
             res = res[:, 0]
         return res, self.data

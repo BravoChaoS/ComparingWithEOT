@@ -19,7 +19,7 @@ class preprocess(object):
         self.past_traj_scale = parser.traj_scale
         self.load_map = parser.get('load_map', False)
         self.map_version = parser.get('map_version', '0.1')
-        self.seq_name = seq_name
+        self.seq_name = seq_name.split("/")[-1][:-4] # added ot filter only sequence name
         self.split = split
         self.phase = phase
         self.log = log
@@ -30,26 +30,44 @@ class preprocess(object):
         elif parser.dataset in {'eth', 'hotel', 'univ', 'zara1', 'zara2'}:
             label_path = f'{data_root}/{parser.dataset}/{seq_name}.txt'
             delimiter = ' '
+        elif parser.dataset in {'eot'}: # added
+            label_path = seq_name
+            delimiter = ' '
         else:
             assert False, 'error'
 
         self.gt = np.genfromtxt(label_path, delimiter=delimiter, dtype=str)
-        frames = self.gt[:, 0].astype(np.float32).astype(np.int)
-        fr_start, fr_end = frames.min(), frames.max()
+
+        ### changed postion from last to here ###
+        self.class_names = class_names = {'Pedestrian': 1, 'Car': 2, 'Cyclist': 3, 'Truck': 4, 'Van': 5, 'Tram': 6,
+                                          'Person': 7, \
+                                          'Misc': 8, 'DontCare': 9, 'Traffic_cone': 10, 'Construction_vehicle': 11,
+                                          'Barrier': 12, 'Motorcycle': 13, \
+                                          'Bicycle': 14, 'Bus': 15, 'Trailer': 16, 'Emergency': 17, 'Construction': 18}
+        for row_index in range(len(self.gt)):
+            self.gt[row_index][2] = class_names[self.gt[row_index][2]]
+        self.gt = self.gt.astype('float32')  # converting string type to float32
+        ### changed postion from last to here ###
+
+        #frames = self.gt[:, 0].astype(np.float32).astype(np.int) # commented
+
+        ## added (taken from SGAN) ##
+        self.frames = np.unique(self.gt[:, 0]).astype(np.float32).astype(np.int64)  # get list of unique frames
+        self.frame_data = []
+        for frame in self.frames:
+            self.frame_data.append(self.gt[frame == self.gt[:, 0].astype(np.float32).astype(np.int64), :])
+        self.num_fr = len(self.frames)
+        ## added ##
+
+        fr_start, fr_end = self.frames.min(), self.frames.max()
         self.init_frame = fr_start
-        self.num_fr = fr_end + 1 - fr_start
+        #self.num_fr = fr_end + 1 - fr_start # commented
 
         if self.load_map:
             self.load_scene_map()
         else:
             self.geom_scene_map = None
 
-        self.class_names = class_names = {'Pedestrian': 1, 'Car': 2, 'Cyclist': 3, 'Truck': 4, 'Van': 5, 'Tram': 6, 'Person': 7, \
-            'Misc': 8, 'DontCare': 9, 'Traffic_cone': 10, 'Construction_vehicle': 11, 'Barrier': 12, 'Motorcycle': 13, \
-            'Bicycle': 14, 'Bus': 15, 'Trailer': 16, 'Emergency': 17, 'Construction': 18}
-        for row_index in range(len(self.gt)):
-            self.gt[row_index][2] = class_names[self.gt[row_index][2]]
-        self.gt = self.gt.astype('float32')
         self.xind, self.zind = 13, 15
 
     def GetID(self, data):
@@ -66,7 +84,7 @@ class preprocess(object):
         for i in range(self.past_frames):
             if frame - i < self.init_frame:              
                 data = []
-            data = self.gt[self.gt[:, 0] == (frame - i * self.frame_skip)]    
+            data = self.gt[self.gt[:, 0] == (frame - i * self.frame_skip)]
             DataList.append(data)
         return DataList
     
@@ -79,6 +97,9 @@ class preprocess(object):
 
     def get_valid_id(self, pre_data, fut_data):
         cur_id = self.GetID(pre_data[0])
+        # we consider only pre_data[0] which is at H timestep:
+        # 1. agents not at H timestep even if they are in previous timestep we wont consider it
+        # 2. agents at H timestep should be checked after whether they are present in previous timesteps
         valid_id = []
         for idx in cur_id:
             exist_pre = [(False if isinstance(data, list) else (idx in data[:, 1])) for data in pre_data[:self.min_past_frames]]
@@ -88,7 +109,7 @@ class preprocess(object):
         return valid_id
 
     def get_pred_mask(self, cur_data, valid_id):
-        pred_mask = np.zeros(len(valid_id), dtype=np.int)
+        pred_mask = np.zeros(len(valid_id), dtype=np.int64)
         for i, idx in enumerate(valid_id):
             pred_mask[i] = cur_data[cur_data[:, 1] == idx].squeeze()[-1]
         return pred_mask
@@ -154,12 +175,21 @@ class preprocess(object):
 
     def __call__(self, frame):
 
-        assert frame - self.init_frame >= 0 and frame - self.init_frame <= self.TotalFrame() - 1, 'frame is %d, total is %d' % (frame, self.TotalFrame())
+        # frame is single int frame number
+        #assert frame - self.init_frame >= 0 and frame - self.init_frame <= self.TotalFrame() - 1, 'frame is %d, total is %d' % (frame, self.TotalFrame())
 
-    
-        pre_data = self.PreData(frame)
-        fut_data = self.FutureData(frame)
-        valid_id = self.get_valid_id(pre_data, fut_data)
+        # preprocesed data for agentformer will have 17 coloumns
+
+        ### slice the data for seq_length similar to SGAN ###
+        pre_data = self.frame_data[frame : frame + 8]  # get past data
+        fut_data = self.frame_data[frame + 8 : frame + 20] # get future data
+        pre_data = pre_data[ : : -1]  # reverse the pre_data as H, H-1, H-2 which is the history data format of AgentFormer
+
+        #pre_data = self.PreData(frame)  # dim: [8, num_agents, 17], contains data in list as H, H-1,H-2,...,H-7 (including frame variable's data)
+        #fut_data = self.FutureData(frame) # dim: [12, num_agents, 17], contains data in list as 1,2,3,...,F (excludes frame variable's data)
+
+        valid_id = self.get_valid_id(pre_data, fut_data) # valid objects present for 8+12 frames
+
         if len(pre_data[0]) == 0 or len(fut_data[0]) == 0 or len(valid_id) == 0:
             return None
 
@@ -173,11 +203,19 @@ class preprocess(object):
         pre_motion_3D, pre_motion_mask = self.PreMotion(pre_data, valid_id)
         fut_motion_3D, fut_motion_mask = self.FutureMotion(fut_data, valid_id)
 
+        # pre_data : contains full history data from current frame number in frame variable
+        # fut_data : contains full future data from current frame number in frame variable
+        # pre_motion_3D : contains history x,y co-ords of valid agents
+        # pre_motion_mask : boolean array which says if object is present at that timestep
+        # fut_motion_3D : contains future x,y co-ords of valid agents
+        # fut_motion_mask : boolean array which says if object is present at that timestep
+        ### We filter agents only if its present for whole 20 timesteps, other agents present in this 20 timesteps are considered neighbhours ###
+
         data = {
-            'pre_motion_3D': pre_motion_3D,
-            'fut_motion_3D': fut_motion_3D,
-            'fut_motion_mask': fut_motion_mask,
-            'pre_motion_mask': pre_motion_mask,
+            'pre_motion_3D': pre_motion_3D, # dims: [num_agents, 8, 2]
+            'fut_motion_3D': fut_motion_3D, # dims: [num_agents, 12, 2]
+            'fut_motion_mask': fut_motion_mask, # dims: [num_agents, 12]
+            'pre_motion_mask': pre_motion_mask, # dims: [num_agents, 8]
             'pre_data': pre_data,
             'fut_data': fut_data,
             'heading': heading,

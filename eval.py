@@ -43,8 +43,9 @@ def align_gt(pred, gt):
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', default='nuscenes_pred')
-    parser.add_argument('--results_dir', default=None)
+    parser.add_argument('--dataset', default='eot')
+    # parser.add_argument('--results_dir', default="results/eot_agentformer/results/epoch_0045/test/gt")
+    parser.add_argument('--results_dir', default="results/eot_agentformer/results/epoch_0045/test/samples")
     parser.add_argument('--data', default='test')
     parser.add_argument('--log_file', default=None)
     args = parser.parse_args()
@@ -57,6 +58,30 @@ if __name__ == '__main__':
         gt_dir = f'{data_root}/label/{args.data}'
         seq_train, seq_val, seq_test = get_nuscenes_pred_split(data_root)
         seq_eval = globals()[f'seq_{args.data}']
+
+    elif dataset == 'eot':  # added for EOT dataset
+        ### added ###
+        gt_dir = 'datasets/EOT_split_preprocessed/test'
+        data_root = 'datasets/EOT_split_preprocessed'
+
+        seq_train, seq_test, seq_val = [], [], []
+        for file in os.listdir(str(data_root) + '/train/'):
+            seq_train.append(str(data_root) + '/train/' + file)
+
+        for file in os.listdir(str(data_root) + '/test/'):
+            seq_test.append(str(data_root) + '/test/' + file)
+
+        for file in os.listdir(str(data_root) + '/val/'):
+            seq_val.append(str(data_root) + '/val/' + file)
+
+        # sort
+        seq_train = sorted(seq_train)
+        seq_test = sorted(seq_test)
+        seq_val = sorted(seq_val)
+        seq_eval = globals()[f'seq_{args.data}']
+        print("Loaded EOT data ....")
+        ### added ###
+
     else:                            # ETH/UCY
         gt_dir = f'datasets/eth_ucy/{args.dataset}'
         seq_train, seq_val, seq_test = get_ethucy_split(args.dataset)
@@ -81,6 +106,7 @@ if __name__ == '__main__':
     print_log('\n\nnumber of sequences to evaluate is %d' % len(seq_eval), log_file)
     for seq_name in seq_eval:
         # load GT raw data
+        seq_name = seq_name.split('/')[-1][:-4] # added fo EOT dataset, to filter only the sequence file name
         gt_data, _ = load_txt_file(os.path.join(gt_dir, seq_name+'.txt'))
         gt_raw = []
         for line_data in gt_data:
@@ -89,15 +115,17 @@ if __name__ == '__main__':
             gt_raw.append(line_data)
         gt_raw = np.stack(gt_raw)
 
-        data_filelist, _ = load_list_from_folder(os.path.join(results_dir, seq_name))    
+        data_filelist, _ = load_list_from_folder(os.path.join(results_dir, seq_name))
             
         for data_file in data_filelist:      # each example e.g., seq_0001 - frame_000009
             # for reconsutrction or deterministic
             if isfile(data_file):
+                print(" ** Most Likely **")
                 all_traj = np.loadtxt(data_file, delimiter=' ', dtype='float32')        # (frames x agents) x 4
                 all_traj = np.expand_dims(all_traj, axis=0)                             # 1 x (frames x agents) x 4
             # for stochastic with multiple samples
             elif isfolder(data_file):
+                print("** Best of 20 samples **")
                 sample_list, _ = load_list_from_folder(data_file)
                 sample_all = []
                 for sample in sample_list:
